@@ -972,6 +972,11 @@ final class GraphTest extends TestCase
 
                 return $this->edges?->testsLinkedTo('resources/views/invoice.blade.php') ?? [];
             }
+
+            public function handles(string $changedRelativePath): bool
+            {
+                return false;
+            }
         };
 
         $graph = $this->graph();
@@ -980,5 +985,53 @@ final class GraphTest extends TestCase
         $graph->setResolvers([$resolver]);
 
         $this->assertSame(['tests/InvoiceTest.php'], $graph->affected(['resources/views/partials/total.blade.php']));
+    }
+
+    #[Test]
+    public function a_path_an_edge_aware_resolver_handles_skips_later_resolvers_and_the_sibling_guess(): void
+    {
+        // Every test is linked to some migration, so the sibling-directory
+        // guess for a new one would select them all. The resolver knows the
+        // new migration only touches `invoices`.
+        $this->repo->write('database/migrations/2024_01_01_create_invoices_table.php', "<?php\n");
+        $this->repo->write('database/migrations/2024_01_01_create_users_table.php', "<?php\n");
+        $this->repo->write('database/migrations/2024_02_01_add_total_to_invoices.php', "<?php\n");
+        $this->repo->write('tests/InvoiceTest.php', "<?php\n");
+        $this->repo->write('tests/UserTest.php', "<?php\n");
+
+        $migrations = new class implements EdgeAwareResolver
+        {
+            private ?Edges $edges = null;
+
+            public function useEdges(Edges $edges): void
+            {
+                $this->edges = $edges;
+            }
+
+            public function resolve(string $projectRoot, string $changedRelativePath): array
+            {
+                return $this->edges?->testsLinkedTo('database/migrations/2024_01_01_create_invoices_table.php') ?? [];
+            }
+
+            public function handles(string $changedRelativePath): bool
+            {
+                return str_starts_with($changedRelativePath, 'database/migrations/');
+            }
+        };
+
+        $everything = new class implements Resolver
+        {
+            public function resolve(string $projectRoot, string $changedRelativePath): array
+            {
+                return ['tests/InvoiceTest.php', 'tests/UserTest.php'];
+            }
+        };
+
+        $graph = $this->graph();
+        $graph->link('tests/InvoiceTest.php', 'database/migrations/2024_01_01_create_invoices_table.php');
+        $graph->link('tests/UserTest.php', 'database/migrations/2024_01_01_create_users_table.php');
+        $graph->setResolvers([$migrations, $everything]);
+
+        $this->assertSame(['tests/InvoiceTest.php'], $graph->affected(['database/migrations/2024_02_01_add_total_to_invoices.php']));
     }
 }

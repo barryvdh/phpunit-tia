@@ -261,8 +261,8 @@ final class Graph implements Edges
 
         $unknown = $this->applyPhpEdgeChanges($relPaths, $testPaths, $affectedSet, $reasons);
         $this->applyTestFileChanges($relPaths, $testPaths, $affectedSet, $reasons);
-        $this->applyUnknownSourceDirs($unknown, $affectedSet, $reasons);
-        $this->applyResolvers($unknown, $affectedSet, $reasons);
+        $handled = $this->applyResolvers($unknown, $affectedSet, $reasons);
+        $this->applyUnknownSourceDirs(array_values(array_diff($unknown, $handled)), $affectedSet, $reasons);
 
         return array_keys($affectedSet);
     }
@@ -401,19 +401,25 @@ final class Graph implements Edges
 
     /**
      * Extension point (§4.3): every change core couldn't map to a known
-     * source edge is offered to each registered Resolver, regardless of
-     * whether the generic sibling-directory fallback already found
-     * something for it — a framework package's domain knowledge (e.g. a
-     * migration→table→test mapping) is more precise than a directory guess.
+     * source edge is offered to each registered Resolver — a framework
+     * package's domain knowledge (e.g. a migration→table→test mapping) is
+     * more precise than a directory guess.
+     *
+     * An EdgeAwareResolver can claim a path by reporting that its answer is
+     * complete. The resolvers after it and the sibling-directory fallback
+     * then skip that path: once templates or migrations are linked, the
+     * directory guess for a new one would match every test linked to any of
+     * its siblings, which is close to the whole suite.
      *
      * @param  list<string>  $unknown
      * @param  array<string, true>  $affectedSet
      * @param  array<string, string>  $reasons
+     * @return list<string> the paths a resolver claimed
      */
-    private function applyResolvers(array $unknown, array &$affectedSet, array &$reasons): void
+    private function applyResolvers(array $unknown, array &$affectedSet, array &$reasons): array
     {
         if ($unknown === [] || $this->resolvers === []) {
-            return;
+            return [];
         }
 
         foreach ($this->resolvers as $resolver) {
@@ -421,6 +427,8 @@ final class Graph implements Edges
                 $resolver->useEdges($this);
             }
         }
+
+        $handled = [];
 
         foreach ($unknown as $rel) {
             foreach ($this->resolvers as $resolver) {
@@ -432,8 +440,16 @@ final class Graph implements Edges
                         $reasons[$testRel] ??= 'resolver '.$resolver::class." matched changed file '{$rel}'";
                     }
                 }
+
+                if ($resolver instanceof EdgeAwareResolver && $resolver->handles($rel)) {
+                    $handled[] = $rel;
+
+                    break;
+                }
             }
         }
+
+        return $handled;
     }
 
     /**
