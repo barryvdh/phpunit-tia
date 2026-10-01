@@ -12,6 +12,7 @@ use JMac\Testing\PhpUnit\Tia\ResultCollector;
 use JMac\Testing\PhpUnit\Tia\RunScope;
 use JMac\Testing\PhpUnit\Tia\Storage;
 use JMac\Testing\PhpUnit\Tia\Subscribers\WriteGraph;
+use JMac\Testing\PhpUnit\Tia\TestPaths;
 use JMac\Testing\PhpUnit\Tia\Tests\Support\TempGitRepository;
 use PHPUnit\Event\TestRunner\ExecutionFinished;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -551,5 +552,27 @@ final class WriteGraphTest extends TestCase
     private function state(): FileState
     {
         return new FileState(Storage::resolve($this->repo->path(), 'local'));
+    }
+
+    #[Test]
+    public function it_persists_linked_files_as_edges_so_a_change_to_one_reruns_the_test(): void
+    {
+        $testId = self::class.'::it_persists_linked_files_as_edges_so_a_change_to_one_reruns_the_test';
+        $this->repo->write('resources/views/foo.blade.php', "<div></div>\n");
+        $this->repo->write('tests/FooTest.php', "<?php\n");
+        $this->repo->commit('seed');
+
+        $results = new ResultCollector;
+        $results->testPrepared($testId, $this->repo->path().'/tests/FooTest.php');
+        $results->link($this->repo->path().'/resources/views/foo.blade.php');
+        $results->testPassed();
+
+        $this->notify($results);
+
+        $graph = $this->persistedGraph();
+        $graph->setTestPaths(new TestPaths(directories: ['tests'], files: [], suffixes: ['Test.php']));
+
+        $this->assertSame(['tests/FooTest.php'], $graph->testsLinkedTo('resources/views/foo.blade.php'));
+        $this->assertSame(['tests/FooTest.php'], $graph->affected(['resources/views/foo.blade.php']));
     }
 }

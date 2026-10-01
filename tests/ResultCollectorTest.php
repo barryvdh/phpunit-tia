@@ -101,4 +101,33 @@ final class ResultCollectorTest extends TestCase
         $this->assertArrayNotHasKey('Tests\\FooTest::a', $collector->all());
         $this->assertArrayHasKey('Tests\\FooTest::b', $collector->all());
     }
+
+    #[Test]
+    public function it_links_source_files_to_the_running_test_file(): void
+    {
+        $collector = new ResultCollector;
+        $collector->testPrepared('Tests\\FooTest::it_renders', 'tests/FooTest.php');
+        $collector->link('resources/views/foo.blade.php');
+        $collector->link('resources/views/foo.blade.php');
+        $collector->link('database/migrations/2024_01_01_create_foos_table.php');
+
+        $this->assertSame(
+            ['tests/FooTest.php' => ['resources/views/foo.blade.php', 'database/migrations/2024_01_01_create_foos_table.php']],
+            $collector->links(),
+        );
+    }
+
+    #[Test]
+    public function it_drops_a_link_made_outside_a_running_test(): void
+    {
+        $collector = new ResultCollector;
+        $collector->link('resources/views/before.blade.php');
+
+        $collector->testPrepared('Tests\\FooTest::it_renders', 'tests/FooTest.php');
+        $collector->testPassed();
+        $collector->finishTest();
+        $collector->link('resources/views/after.blade.php');
+
+        $this->assertSame([], $collector->links());
+    }
 }

@@ -25,11 +25,41 @@ final class ResultCollector
 
     private ?float $startTime = null;
 
+    /**
+     * @var array<string, array<string, true>> test file => source file => linked
+     */
+    private array $links = [];
+
     public function testPrepared(string $testId, ?string $testFile = null): void
     {
         $this->currentTestId = $testId;
         $this->currentTestFile = $testFile;
         $this->startTime = microtime(true);
+    }
+
+    /**
+     * Link the running test's file to a source file its coverage cannot show,
+     * such as a template it rendered. Dropped outside a running test, and when
+     * PHPUnit gave the test no file.
+     */
+    public function link(string $sourceFile): void
+    {
+        if ($this->currentTestFile === null || $sourceFile === '') {
+            return;
+        }
+
+        $this->links[$this->currentTestFile][$sourceFile] = true;
+    }
+
+    /**
+     * @return array<string, list<string>> test file => source files linked to it this run
+     */
+    public function links(): array
+    {
+        return array_map(
+            static fn (array $sources): array => array_map(strval(...), array_keys($sources)),
+            $this->links,
+        );
     }
 
     public function testPassed(): void
@@ -80,6 +110,7 @@ final class ResultCollector
     public function reset(): void
     {
         $this->results = [];
+        $this->links = [];
         $this->currentTestId = null;
         $this->currentTestFile = null;
         $this->startTime = null;

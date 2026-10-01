@@ -9,6 +9,7 @@ use JMac\Testing\PhpUnit\Tia\Contracts\Resolver;
 use JMac\Testing\PhpUnit\Tia\FileState;
 use JMac\Testing\PhpUnit\Tia\Fingerprint;
 use JMac\Testing\PhpUnit\Tia\Graph;
+use JMac\Testing\PhpUnit\Tia\ResultCollector;
 use JMac\Testing\PhpUnit\Tia\Storage;
 use JMac\Testing\PhpUnit\Tia\Tests\Support\TempGitRepository;
 use JMac\Testing\PhpUnit\Tia\Tia;
@@ -573,5 +574,31 @@ final class TiaTest extends TestCase
         require $this->repo->path().'/'.$relativePath;
 
         return $class;
+    }
+
+    #[Test]
+    public function link_does_nothing_when_this_run_does_not_record(): void
+    {
+        $results = new ResultCollector;
+        $results->testPrepared('Tests\\FooTest::it_renders', 'tests/FooTest.php');
+
+        Tia::link('resources/views/foo.blade.php');
+
+        $this->assertSame([], $results->links());
+    }
+
+    #[Test]
+    public function link_hands_each_file_to_the_collector_of_a_recording_run(): void
+    {
+        $results = new ResultCollector;
+        $results->testPrepared('Tests\\FooTest::it_renders', 'tests/FooTest.php');
+
+        Tia::recordInto($results);
+        Tia::link('resources/views/foo.blade.php', 'resources/views/layout.blade.php');
+
+        $this->assertSame(
+            ['tests/FooTest.php' => ['resources/views/foo.blade.php', 'resources/views/layout.blade.php']],
+            $results->links(),
+        );
     }
 }

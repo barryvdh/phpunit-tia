@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace JMac\Testing\PhpUnit\Tia\Tests;
 
+use JMac\Testing\PhpUnit\Tia\Contracts\EdgeAwareResolver;
+use JMac\Testing\PhpUnit\Tia\Contracts\Edges;
 use JMac\Testing\PhpUnit\Tia\Contracts\Resolver;
 use JMac\Testing\PhpUnit\Tia\Graph;
 use JMac\Testing\PhpUnit\Tia\TestPaths;
@@ -924,5 +926,59 @@ final class GraphTest extends TestCase
         $graph->setResult('main', 'Tests\\FooTest::passed', 0, '', 0.0, 0, 'tests/FooTest.php');
 
         $this->assertFalse($graph->hasUnlocatedTestsToRerun('main'));
+    }
+
+    #[Test]
+    public function tests_linked_to_lists_every_test_with_an_edge_to_the_source(): void
+    {
+        $this->repo->write('resources/views/layout.blade.php', "<div></div>\n");
+        $this->repo->write('tests/FooTest.php', "<?php\n");
+        $this->repo->write('tests/BarTest.php', "<?php\n");
+        $this->repo->write('tests/BazTest.php', "<?php\n");
+
+        $graph = $this->graph();
+        $graph->link('tests/FooTest.php', 'resources/views/layout.blade.php');
+        $graph->link('tests/BarTest.php', $this->repo->path().'/resources/views/layout.blade.php');
+        $graph->link('tests/BazTest.php', 'src/Baz.php');
+
+        $this->assertSame(['tests/FooTest.php', 'tests/BarTest.php'], $graph->testsLinkedTo('resources/views/layout.blade.php'));
+        $this->assertSame([], $graph->testsLinkedTo('resources/views/never-linked.blade.php'));
+    }
+
+    #[Test]
+    public function affected_hands_the_graph_to_edge_aware_resolvers(): void
+    {
+        // A new partial has no edge yet. The resolver knows which template
+        // includes it, and asks the graph which tests rendered that one.
+        $this->repo->write('resources/views/invoice.blade.php', "@include('partials.total')\n");
+        $this->repo->write('resources/views/partials/total.blade.php', "<p></p>\n");
+        $this->repo->write('tests/InvoiceTest.php', "<?php\n");
+        $this->repo->write('tests/OtherTest.php', "<?php\n");
+
+        $resolver = new class implements EdgeAwareResolver
+        {
+            private ?Edges $edges = null;
+
+            public function useEdges(Edges $edges): void
+            {
+                $this->edges = $edges;
+            }
+
+            public function resolve(string $projectRoot, string $changedRelativePath): array
+            {
+                if ($changedRelativePath !== 'resources/views/partials/total.blade.php') {
+                    return [];
+                }
+
+                return $this->edges?->testsLinkedTo('resources/views/invoice.blade.php') ?? [];
+            }
+        };
+
+        $graph = $this->graph();
+        $graph->link('tests/InvoiceTest.php', 'resources/views/invoice.blade.php');
+        $graph->link('tests/OtherTest.php', 'src/Other.php');
+        $graph->setResolvers([$resolver]);
+
+        $this->assertSame(['tests/InvoiceTest.php'], $graph->affected(['resources/views/partials/total.blade.php']));
     }
 }

@@ -131,6 +131,27 @@ TIA-DEBUG: running Tests\FooTest::test_it_works — source changed: src/Foo.php
 
 A common cause: TIA's change detection includes `git status`, so any file a test run writes back into the project tree (a fixture database, a generated upload, a cache directory) looks "changed" on every run if it isn't `.gitignore`d — and can mark every test that shares its directory as affected. If the reported reason names a file you didn't intentionally edit, `.gitignore` it and re-run.
 
+### Files coverage can't see
+Coverage only records executed PHP inside `<source>`. A template a test renders, a fixture it reads or a migration it runs never gets an edge, so a change to one skips the tests that depend on it. A framework integration can link those files to the running test, and they then work like any covered source file:
+
+```php
+use JMac\Testing\PhpUnit\Tia\Tia;
+
+// e.g. from a view composer or a query listener, while a test runs
+Tia::link($view->getPath());
+```
+
+`Tia::link()` does nothing when the run doesn't record, or outside a running test.
+
+A changed file without an edge (a new partial, a new migration) goes to the registered resolvers. A resolver that implements `Contracts\EdgeAwareResolver` gets the graph before it resolves anything, and can ask which tests are linked to a file it already knows: the template that includes the new partial, or an earlier migration of the same table.
+
+```php
+public function resolve(string $projectRoot, string $changedRelativePath): array
+{
+    return $this->edges->testsLinkedTo('resources/views/invoice.blade.php');
+}
+```
+
 ## CI Workflows
 To use TIA in CI, your baseline graph must persist between runs. See our own [GitHub Action workflow](.github/workflows/tests.yml) for an example. At a high level, your workflow needs to:
 

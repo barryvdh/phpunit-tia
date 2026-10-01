@@ -60,6 +60,11 @@ final readonly class WriteGraph implements ExecutionFinishedSubscriber
             $edges = Recorder::invert($data->lineCoverage(), $results, $testIdByIndex);
         }
 
+        // Edges coverage cannot see, linked through Tia::link() while the tests ran.
+        foreach ($this->results->links() as $testFile => $sourceFiles) {
+            $edges[$testFile] = [...$edges[$testFile] ?? [], ...$sourceFiles];
+        }
+
         $graph->replaceEdges($edges);
 
         $executedTestFiles = [];

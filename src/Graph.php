@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace JMac\Testing\PhpUnit\Tia;
 
+use JMac\Testing\PhpUnit\Tia\Contracts\EdgeAwareResolver;
+use JMac\Testing\PhpUnit\Tia\Contracts\Edges;
 use JMac\Testing\PhpUnit\Tia\Contracts\Resolver;
 use PHPUnit\Framework\TestStatus\TestStatus;
 use PHPUnit\TextUI\Configuration\Registry;
@@ -19,7 +21,7 @@ use PHPUnit\TextUI\Configuration\Registry;
  * applyUnknownSourceDirs(). Framework packages extend this via Resolver
  * (Contracts/Resolver.php) instead.
  */
-final class Graph
+final class Graph implements Edges
 {
     /**
      * The branch whose baseline is read when the current branch has none of
@@ -414,6 +416,12 @@ final class Graph
             return;
         }
 
+        foreach ($this->resolvers as $resolver) {
+            if ($resolver instanceof EdgeAwareResolver) {
+                $resolver->useEdges($this);
+            }
+        }
+
         foreach ($unknown as $rel) {
             foreach ($this->resolvers as $resolver) {
                 foreach ($resolver->resolve($this->projectRoot, $rel) as $testFile) {
@@ -426,6 +434,29 @@ final class Graph
                 }
             }
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function testsLinkedTo(string $sourceFile): array
+    {
+        $rel = $this->relative($sourceFile);
+
+        if ($rel === null || ! isset($this->fileIds[$rel])) {
+            return [];
+        }
+
+        $id = $this->fileIds[$rel];
+        $tests = [];
+
+        foreach ($this->edges as $testFile => $ids) {
+            if (in_array($id, $ids, true)) {
+                $tests[] = (string) $testFile;
+            }
+        }
+
+        return $tests;
     }
 
     public function recordedAtSha(string $branch): ?string

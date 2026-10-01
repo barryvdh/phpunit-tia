@@ -68,6 +68,8 @@ final class Extension implements ExtensionContract
         $results = new ResultCollector;
         $scope = new RunScope;
 
+        Tia::recordInto($results);
+
         $facade->registerSubscribers(
             new RecordTestPrepared($results),
             new RecordTestPassed($results),
