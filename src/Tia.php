@@ -103,6 +103,15 @@ final class Tia
     }
 
     /**
+     * Whether this run records edges, so an integration can skip installing
+     * hooks whose links would be dropped anyway.
+     */
+    public static function isRecording(): bool
+    {
+        return self::$recording !== null;
+    }
+
+    /**
      * Link the running test to files its line coverage cannot show: a template
      * it rendered, a fixture or config file it read, a migration it ran. Each
      * becomes an edge like a covered source file, so a change to it re-runs
