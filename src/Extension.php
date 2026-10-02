@@ -43,6 +43,8 @@ final class Extension implements ExtensionContract
         // driver after the graph was written elsewhere (e.g. CI vs. local).
         Tia::configure($projectRoot, $storageMode, $resolvers, $fallbackBranch);
 
+        fwrite(STDERR, 'phpunit-tia: '.Tia::instance()->summary().".\n");
+
         if (! $this->coverageDriverAvailable()) {
             fwrite(STDERR, "phpunit-tia: no coverage driver (pcov/xdebug) available — recording disabled for this run.\n");
 

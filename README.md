@@ -119,6 +119,13 @@ phpunit --disable-coverage-targeting
 Pair it with `PHPUNIT_TIA_FRESH=1` if you're deliberately rebuilding a baseline. You only need the flag when recording — replaying a baseline, or running without a coverage driver, works fine without it.
 
 ### Debugging a test that won't skip
+Every run starts with one line on STDERR saying why TIA is inactive, or how many test files the changes affect and which changed files affect the most:
+
+```
+phpunit-tia: 12 of 165 test files affected by 3 changed files: src/Models/Order.php (11), src/Services/Mailer.php (2), tests/OrderTest.php (1).
+phpunit-tia: inactive — composer.lock/phpunit.xml changed since the stored graph was written.
+```
+
 If a test keeps running when you expect TIA to skip it, pass an environment variable to have TIA explain why on STDERR, one line per test that actually ran:
 
 ```sh

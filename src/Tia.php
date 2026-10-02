@@ -46,6 +46,7 @@ final class Tia
     /**
      * @param  array<string, true>  $affectedTestFiles
      * @param  array<string, string>  $affectedReasons
+     * @param  array<int, string>  $changedFiles
      */
     private function __construct(
         private readonly bool $active,
@@ -54,6 +55,7 @@ final class Tia
         array $affectedTestFiles,
         array $affectedReasons = [],
         private readonly ?string $inactiveReason = null,
+        private readonly array $changedFiles = [],
     ) {
         $this->affectedTestFiles = $affectedTestFiles;
         $this->affectedReasons = $affectedReasons;
@@ -232,6 +234,55 @@ final class Tia
     }
 
     /**
+     * One line for the whole run, written by Extension::bootstrap(): why TIA
+     * is inactive, or how many test files the changes affect and which
+     * changed files affect the most — so a run that skips nothing explains
+     * itself without PHPUNIT_TIA_DEBUG's line per test. Counted per changed
+     * file rather than from the per-test reasons, which keep only the first
+     * file that matched a test and would hide the others.
+     */
+    public function summary(): string
+    {
+        if (! $this->active || $this->graph === null) {
+            return 'inactive — '.($this->inactiveReason ?? 'TIA inactive this run');
+        }
+
+        $affected = count($this->affectedTestFiles);
+        $total = count(array_unique([...$this->graph->allTestFiles(), ...array_keys($this->affectedTestFiles)]));
+        $summary = "{$affected} of {$total} test files affected";
+
+        if ($affected === 0) {
+            return $summary;
+        }
+
+        $perFile = [];
+
+        foreach ($this->changedFiles as $file) {
+            $count = count($this->graph->affected([$file]));
+
+            if ($count > 0) {
+                $perFile[$file] = $count;
+            }
+        }
+
+        // Most affected first; ties by path, as arsort() is stable.
+        ksort($perFile);
+        arsort($perFile);
+
+        $listed = [];
+
+        foreach (array_slice($perFile, 0, 5, true) as $file => $count) {
+            $listed[] = "{$file} ({$count})";
+        }
+
+        if (count($perFile) > 5) {
+            $listed[] = 'and '.(count($perFile) - 5).' more';
+        }
+
+        return $summary.' by '.count($perFile).(count($perFile) === 1 ? ' changed file: ' : ' changed files: ').implode(', ', $listed);
+    }
+
+    /**
      * `PHPUNIT_TIA_DEBUG=1` companion to {@see cachedStatusIfUnaffected()} —
      * called by the trait only once it's already decided *not* to skip, to
      * explain why. Mirrors that method's own early-return structure so the
@@ -380,7 +431,7 @@ final class Tia
         $reasons = [];
         $affected = $graph->affected($changed, $reasons);
 
-        return new self(true, $graph, $branch, array_fill_keys($affected, true), $reasons);
+        return new self(true, $graph, $branch, array_fill_keys($affected, true), $reasons, changedFiles: $changed);
     }
 
     private static function inactive(?string $reason = null): self

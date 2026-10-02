@@ -488,6 +488,71 @@ final class TiaTest extends TestCase
         );
     }
 
+    #[Test]
+    public function summary_reports_why_tia_is_inactive(): void
+    {
+        $this->assertSame(
+            'inactive — TIA is not configured for this run',
+            Tia::instance()->summary(),
+        );
+    }
+
+    #[Test]
+    public function summary_lists_each_changed_file_that_affects_a_test(): void
+    {
+        $this->recordPassingTest();
+
+        // FooTest also covers src/Bar.php. Its per-test reason names only the
+        // first changed file that matched, so the summary must count per file.
+        $state = new FileState(Storage::resolve($this->repo->path(), 'local'));
+        $graph = Graph::decode((string) $state->read(Storage::GRAPH_KEY), $this->repo->path());
+        $graph->link($this->repo->path().'/tests/FooTest.php', $this->repo->path().'/src/Bar.php');
+        $state->write(Storage::GRAPH_KEY, (string) $graph->encode());
+
+        $this->repo->write('src/Foo.php', "<?php\n\nclass Foo\n{\n    public int \$x = 1;\n}\n");
+        $this->repo->write('src/Bar.php', "<?php\n\nclass Bar\n{\n}\n");
+
+        Tia::configure($this->repo->path(), 'local');
+
+        $this->assertSame(
+            '1 of 1 test files affected by 2 changed files: src/Bar.php (1), src/Foo.php (1)',
+            Tia::instance()->summary(),
+        );
+    }
+
+    #[Test]
+    public function summary_lists_at_most_five_changed_files(): void
+    {
+        $this->recordPassingTest();
+
+        $state = new FileState(Storage::resolve($this->repo->path(), 'local'));
+        $graph = Graph::decode((string) $state->read(Storage::GRAPH_KEY), $this->repo->path());
+
+        foreach (['A', 'B', 'C', 'D', 'E', 'F'] as $name) {
+            $graph->link($this->repo->path().'/tests/FooTest.php', $this->repo->path()."/src/{$name}.php");
+            $this->repo->write("src/{$name}.php", "<?php\n\nclass {$name}\n{\n}\n");
+        }
+
+        $state->write(Storage::GRAPH_KEY, (string) $graph->encode());
+
+        Tia::configure($this->repo->path(), 'local');
+
+        $this->assertSame(
+            '1 of 1 test files affected by 6 changed files: src/A.php (1), src/B.php (1), src/C.php (1), src/D.php (1), src/E.php (1), and 1 more',
+            Tia::instance()->summary(),
+        );
+    }
+
+    #[Test]
+    public function summary_reports_no_affected_test_files(): void
+    {
+        $this->recordPassingTest();
+
+        Tia::configure($this->repo->path(), 'local');
+
+        $this->assertSame('0 of 1 test files affected', Tia::instance()->summary());
+    }
+
     /**
      * @return array{0: string, 1: string, 2: string} [className, methodName, sha]
      */
