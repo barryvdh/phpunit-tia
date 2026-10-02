@@ -132,7 +132,7 @@ With `PHPUNIT_TIA_DEBUG=1` (see below), the line also lists the changed files th
 phpunit-tia: 12 of 165 test files affected. By changed file: src/Models/Order.php (11), src/Services/Mailer.php (2), tests/OrderTest.php (1).
 ```
 
-ParaTest workers don't write it, as each would repeat it.
+Running with `--fail-on-skipped` or `--display-skipped` reports TIA as inactive: it replays a cached pass as a skip, so under either option every test runs. ParaTest workers don't write it, as each would repeat it.
 
 ### Debugging a test that won't skip
 If a test keeps running when you expect TIA to skip it, pass an environment variable to have TIA explain why on STDERR, one line per test that actually ran:

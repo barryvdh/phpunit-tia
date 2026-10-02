@@ -34,7 +34,9 @@ final class RunSummaryTest extends TestCase
                     </testsuite>
                 </testsuites>
                 <extensions>
-                    <bootstrap class="JMac\Testing\PhpUnit\Tia\Extension"/>
+                    <bootstrap class="JMac\Testing\PhpUnit\Tia\Extension">
+                        <parameter name="storage" value="local"/>
+                    </bootstrap>
                 </extensions>
             </phpunit>
             XML);
@@ -78,6 +80,21 @@ final class RunSummaryTest extends TestCase
     }
 
     #[Test]
+    public function it_says_tia_is_inactive_when_the_run_does_not_allow_skips(): void
+    {
+        $this->runProject([]);
+
+        $this->assertStringContainsString(
+            'phpunit-tia: 0 of 1 test files affected.',
+            $this->runProject(['PHPUNIT_TIA_FRESH' => '0']),
+        );
+        $this->assertStringContainsString(
+            "phpunit-tia: inactive: a skip would violate this run's fail-on-skipped/display-skipped policy — every test runs.",
+            $this->runProject(['PHPUNIT_TIA_FRESH' => '0'], ['--fail-on-skipped']),
+        );
+    }
+
+    #[Test]
     public function it_writes_no_summary_in_a_paratest_worker(): void
     {
         $output = $this->runProject(['PARATEST' => '1']);
@@ -88,11 +105,12 @@ final class RunSummaryTest extends TestCase
 
     /**
      * @param  array<string, string>  $environment
+     * @param  list<string>  $arguments
      */
-    private function runProject(array $environment): string
+    private function runProject(array $environment, array $arguments = []): string
     {
         $process = new Process(
-            [dirname(__DIR__).'/vendor/bin/phpunit'],
+            [dirname(__DIR__).'/vendor/bin/phpunit', ...$arguments],
             $this->project->path(),
             ['PHPUNIT_TIA_FRESH' => '1', ...$environment],
         );

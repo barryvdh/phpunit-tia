@@ -234,6 +234,12 @@ final class Tia
         return $this->graph?->recordedAtSha($this->branch);
     }
 
+    /** Whether this run replays cached passes at all — false for every inactive reason summary() reports. */
+    public function isActive(): bool
+    {
+        return $this->active && $this->graph !== null;
+    }
+
     /**
      * One line for the whole run, written by Extension::bootstrap(): why TIA
      * is inactive, or how many test files the changes affect, plus those that
