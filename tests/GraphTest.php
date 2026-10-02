@@ -10,10 +10,12 @@ use JMac\Testing\PhpUnit\Tia\Contracts\Resolver;
 use JMac\Testing\PhpUnit\Tia\Graph;
 use JMac\Testing\PhpUnit\Tia\TestPaths;
 use JMac\Testing\PhpUnit\Tia\Tests\Support\TempGitRepository;
+use PHPUnit\Event\Facade as EventFacade;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestStatus\TestStatus;
 use PHPUnit\TextUI\CliArguments\Builder as CliBuilder;
+use PHPUnit\TextUI\Configuration\Merger;
 use PHPUnit\TextUI\Configuration\Registry;
 use PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration;
 use ReflectionProperty;
@@ -769,8 +771,10 @@ final class GraphTest extends TestCase
         $original = $registry->getValue();
 
         try {
-            Registry::init(
-                (new CliBuilder)->fromParameters([
+            // Not Registry::init(): PHPUnit 13.4 has it emit an event. The emitter
+            // arguments are also new in 13.4; earlier versions ignore them.
+            $registry->setValue(null, (new Merger(EventFacade::emitter()))->merge(
+                (new CliBuilder(EventFacade::emitter()))->fromParameters([
                     '--fail-on-risky',
                     '--fail-on-warning',
                     '--fail-on-notice',
@@ -779,7 +783,7 @@ final class GraphTest extends TestCase
                     '--fail-on-skipped',
                 ]),
                 DefaultConfiguration::create(),
-            );
+            ));
 
             $this->assertTrue($graph->shouldRerunStatus($status));
         } finally {

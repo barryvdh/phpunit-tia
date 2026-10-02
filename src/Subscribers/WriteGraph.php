@@ -14,6 +14,7 @@ use JMac\Testing\PhpUnit\Tia\ResultCollector;
 use JMac\Testing\PhpUnit\Tia\RunScope;
 use JMac\Testing\PhpUnit\Tia\Storage;
 use JMac\Testing\PhpUnit\Tia\Tia;
+use PHPUnit\Event\Facade as EventFacade;
 use PHPUnit\Event\TestRunner\ExecutionFinished;
 use PHPUnit\Event\TestRunner\ExecutionFinishedSubscriber;
 use PHPUnit\Runner\CodeCoverage;
@@ -171,7 +172,8 @@ final readonly class WriteGraph implements ExecutionFinishedSubscriber
     {
         try {
             $xmlGroups = $configuration->hasConfigurationFile()
-                ? (new Loader)->load($configuration->configurationFile())->groups()
+                // PHPUnit 13.4 gave the loader an Emitter; earlier versions ignore the argument.
+                ? (new Loader(EventFacade::emitter()))->load($configuration->configurationFile())->groups()
                 : null;
         } catch (Throwable) {
             return true;

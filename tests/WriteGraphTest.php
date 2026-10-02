@@ -14,11 +14,13 @@ use JMac\Testing\PhpUnit\Tia\Storage;
 use JMac\Testing\PhpUnit\Tia\Subscribers\WriteGraph;
 use JMac\Testing\PhpUnit\Tia\TestPaths;
 use JMac\Testing\PhpUnit\Tia\Tests\Support\TempGitRepository;
+use PHPUnit\Event\Facade as EventFacade;
 use PHPUnit\Event\TestRunner\ExecutionFinished;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestStatus\TestStatus;
 use PHPUnit\TextUI\CliArguments\Builder as CliBuilder;
+use PHPUnit\TextUI\Configuration\Merger;
 use PHPUnit\TextUI\Configuration\Registry;
 use PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration;
 use PHPUnit\TextUI\XmlConfiguration\Loader;
@@ -523,12 +525,14 @@ final class WriteGraphTest extends TestCase
         $original = $registry->getValue();
 
         try {
-            Registry::init(
-                (new CliBuilder)->fromParameters(
+            // Not Registry::init(): PHPUnit 13.4 has it emit an event. The emitter
+            // arguments are also new in 13.4; earlier versions ignore them.
+            $registry->setValue(null, (new Merger(EventFacade::emitter()))->merge(
+                (new CliBuilder(EventFacade::emitter()))->fromParameters(
                     $configurationFile === null ? $cliArguments : [...$cliArguments, '--configuration', $configurationFile],
                 ),
-                $configurationFile === null ? DefaultConfiguration::create() : (new Loader)->load($configurationFile),
-            );
+                $configurationFile === null ? DefaultConfiguration::create() : (new Loader(EventFacade::emitter()))->load($configurationFile),
+            ));
 
             (new WriteGraph($this->repo->path(), $results, 'local', $scope ?? new RunScope))->notify($event);
         } finally {
