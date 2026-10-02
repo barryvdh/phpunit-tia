@@ -156,31 +156,6 @@ public function resolve(Edges $edges, string $projectRoot, string $changedRelati
 }
 ```
 
-### Laravel
-The Laravel integration links each test to the views it renders and to the migrations of the tables it queries. Add the trait to your base `TestCase`, next to `RunWithTia`:
-
-```php
-use JMac\Testing\PhpUnit\Tia\Integrations\Laravel\RecordsLaravelEdges;
-
-abstract class TestCase extends \Illuminate\Foundation\Testing\TestCase
-{
-    use RecordsLaravelEdges;
-    use RunWithTia;
-}
-```
-
-And register its resolver in `phpunit-tia.php`, ahead of any resolver of your own:
-
-```php
-return [
-    'resolvers' => [
-        JMac\Testing\PhpUnit\Tia\Integrations\Laravel\LaravelResolver::class,
-    ],
-];
-```
-
-A changed view or migration then re-runs the tests that rendered or queried it. A new migration runs the tests that use the tables it changes, and a new partial or component runs the tests of the views and classes that use it. Only what happens in the test method itself is linked: a seeder in `setUp()` links nothing.
-
 ## CI Workflows
 To use TIA in CI, your baseline graph must persist between runs. See our own [GitHub Action workflow](.github/workflows/tests.yml) for an example. At a high level, your workflow needs to:
 
