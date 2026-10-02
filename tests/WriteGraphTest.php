@@ -12,12 +12,15 @@ use JMac\Testing\PhpUnit\Tia\ResultCollector;
 use JMac\Testing\PhpUnit\Tia\RunScope;
 use JMac\Testing\PhpUnit\Tia\Storage;
 use JMac\Testing\PhpUnit\Tia\Subscribers\WriteGraph;
+use JMac\Testing\PhpUnit\Tia\TestPaths;
 use JMac\Testing\PhpUnit\Tia\Tests\Support\TempGitRepository;
+use PHPUnit\Event\Facade as EventFacade;
 use PHPUnit\Event\TestRunner\ExecutionFinished;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestStatus\TestStatus;
 use PHPUnit\TextUI\CliArguments\Builder as CliBuilder;
+use PHPUnit\TextUI\Configuration\Merger;
 use PHPUnit\TextUI\Configuration\Registry;
 use PHPUnit\TextUI\XmlConfiguration\DefaultConfiguration;
 use PHPUnit\TextUI\XmlConfiguration\Loader;
@@ -522,12 +525,14 @@ final class WriteGraphTest extends TestCase
         $original = $registry->getValue();
 
         try {
-            Registry::init(
-                (new CliBuilder)->fromParameters(
+            // Not Registry::init(): PHPUnit 13.4 has it emit an event. The emitter
+            // arguments are also new in 13.4; earlier versions ignore them.
+            $registry->setValue(null, (new Merger(EventFacade::emitter()))->merge(
+                (new CliBuilder(EventFacade::emitter()))->fromParameters(
                     $configurationFile === null ? $cliArguments : [...$cliArguments, '--configuration', $configurationFile],
                 ),
-                $configurationFile === null ? DefaultConfiguration::create() : (new Loader)->load($configurationFile),
-            );
+                $configurationFile === null ? DefaultConfiguration::create() : (new Loader(EventFacade::emitter()))->load($configurationFile),
+            ));
 
             (new WriteGraph($this->repo->path(), $results, 'local', $scope ?? new RunScope))->notify($event);
         } finally {
@@ -551,5 +556,27 @@ final class WriteGraphTest extends TestCase
     private function state(): FileState
     {
         return new FileState(Storage::resolve($this->repo->path(), 'local'));
+    }
+
+    #[Test]
+    public function it_persists_linked_files_as_edges_so_a_change_to_one_reruns_the_test(): void
+    {
+        $testId = self::class.'::it_persists_linked_files_as_edges_so_a_change_to_one_reruns_the_test';
+        $this->repo->write('resources/views/foo.blade.php', "<div></div>\n");
+        $this->repo->write('tests/FooTest.php', "<?php\n");
+        $this->repo->commit('seed');
+
+        $results = new ResultCollector;
+        $results->testPrepared($testId, $this->repo->path().'/tests/FooTest.php');
+        $results->link($this->repo->path().'/resources/views/foo.blade.php');
+        $results->testPassed();
+
+        $this->notify($results);
+
+        $graph = $this->persistedGraph();
+        $graph->setTestPaths(new TestPaths(directories: ['tests'], files: [], suffixes: ['Test.php']));
+
+        $this->assertSame(['tests/FooTest.php'], $graph->testsLinkedTo('resources/views/foo.blade.php'));
+        $this->assertSame(['tests/FooTest.php'], $graph->affected(['resources/views/foo.blade.php']));
     }
 }

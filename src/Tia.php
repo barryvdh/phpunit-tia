@@ -28,12 +28,14 @@ final class Tia
 
     private static string $fallbackBranch = Graph::DEFAULT_FALLBACK_BRANCH;
 
-    /** @var list<Contracts\Resolver> */
+    /** @var list<Contracts\Resolver|Contracts\EdgeAwareResolver> */
     private static array $resolvers = [];
 
     private static bool $configured = false;
 
     private static ?self $instance = null;
+
+    private static ?ResultCollector $recording = null;
 
     /** @var array<string, true> project-relative test file => affected */
     private array $affectedTestFiles;
@@ -90,6 +92,49 @@ final class Tia
         return $trimmed !== '' ? $trimmed : Graph::DEFAULT_FALLBACK_BRANCH;
     }
 
+    /**
+     * Extension::bootstrap() hands over the collector of a run that records,
+     * so link() has somewhere to put its edges. Null, the default, when this
+     * run records nothing: no coverage driver, ParaTest, or TIA disabled.
+     */
+    public static function recordInto(?ResultCollector $results): void
+    {
+        self::$recording = $results;
+    }
+
+    /**
+     * Whether this run records edges, so an integration can skip installing
+     * hooks whose links would be dropped anyway.
+     */
+    public static function isRecording(): bool
+    {
+        return self::$recording !== null;
+    }
+
+    /**
+     * Link the running test to files its line coverage cannot show: a template
+     * it rendered, a fixture or config file it read, a migration it ran. Each
+     * becomes an edge like a covered source file, so a change to it re-runs
+     * the test. Coverage only sees executed PHP inside <source>, which leaves
+     * those files without an edge.
+     *
+     * Meant for framework integrations that can observe such reads (a view
+     * composer, a query listener) rather than for individual tests. Does
+     * nothing when this run does not record, or outside a running test.
+     *
+     * @param  string  ...$sourceFiles  Absolute or project-relative paths.
+     */
+    public static function link(string ...$sourceFiles): void
+    {
+        if (self::$recording === null) {
+            return;
+        }
+
+        foreach ($sourceFiles as $sourceFile) {
+            self::$recording->link($sourceFile);
+        }
+    }
+
     /** Test seam: drop back to the unconfigured state between test cases that touch this singleton. */
     public static function reset(): void
     {
@@ -99,6 +144,7 @@ final class Tia
         self::$resolvers = [];
         self::$configured = false;
         self::$instance = null;
+        self::$recording = null;
     }
 
     public static function instance(): self
@@ -274,7 +320,7 @@ final class Tia
     }
 
     /**
-     * @param  list<Contracts\Resolver>  $resolvers
+     * @param  list<Contracts\Resolver|Contracts\EdgeAwareResolver>  $resolvers
      */
     private static function attemptBoot(
         string $projectRoot,

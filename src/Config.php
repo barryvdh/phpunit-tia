@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace JMac\Testing\PhpUnit\Tia;
 
+use JMac\Testing\PhpUnit\Tia\Contracts\EdgeAwareResolver;
 use JMac\Testing\PhpUnit\Tia\Contracts\Resolver;
 
 /**
@@ -17,7 +18,7 @@ use JMac\Testing\PhpUnit\Tia\Contracts\Resolver;
 final class Config
 {
     /**
-     * @return list<Resolver>
+     * @return list<Resolver|EdgeAwareResolver>
      */
     public static function loadResolvers(string $projectRoot): array
     {
@@ -36,13 +37,13 @@ final class Config
         $resolvers = [];
 
         foreach ($config['resolvers'] as $resolver) {
-            if ($resolver instanceof Resolver) {
+            if ($resolver instanceof Resolver || $resolver instanceof EdgeAwareResolver) {
                 $resolvers[] = $resolver;
 
                 continue;
             }
 
-            if (is_string($resolver) && is_subclass_of($resolver, Resolver::class)) {
+            if (is_string($resolver) && (is_subclass_of($resolver, Resolver::class) || is_subclass_of($resolver, EdgeAwareResolver::class))) {
                 $resolvers[] = new $resolver;
             }
         }

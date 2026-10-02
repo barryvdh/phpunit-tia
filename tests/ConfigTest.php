@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace JMac\Testing\PhpUnit\Tia\Tests;
 
 use JMac\Testing\PhpUnit\Tia\Config;
+use JMac\Testing\PhpUnit\Tia\Contracts\EdgeAwareResolver;
+use JMac\Testing\PhpUnit\Tia\Contracts\Edges;
 use JMac\Testing\PhpUnit\Tia\Contracts\Resolver;
 use JMac\Testing\PhpUnit\Tia\Tests\Support\TempGitRepository;
 use PHPUnit\Framework\Attributes\Test;
@@ -88,6 +90,26 @@ final class ConfigTest extends TestCase
     }
 
     #[Test]
+    public function it_accepts_edge_aware_resolvers(): void
+    {
+        $this->repo->write('phpunit-tia.php', <<<'PHP'
+            <?php
+
+            return [
+                'resolvers' => [
+                    JMac\Testing\PhpUnit\Tia\Tests\ConfigTestExampleEdgeAwareResolver::class,
+                    new JMac\Testing\PhpUnit\Tia\Tests\ConfigTestExampleEdgeAwareResolver,
+                ],
+            ];
+            PHP);
+
+        $resolvers = Config::loadResolvers($this->repo->path());
+
+        $this->assertCount(2, $resolvers);
+        $this->assertContainsOnlyInstancesOf(ConfigTestExampleEdgeAwareResolver::class, $resolvers);
+    }
+
+    #[Test]
     public function it_ignores_entries_that_are_not_resolvers(): void
     {
         $this->repo->write('phpunit-tia.php', <<<'PHP'
@@ -110,5 +132,13 @@ final class ConfigTestExampleResolver implements Resolver
     public function resolve(string $projectRoot, string $changedRelativePath): array
     {
         return [];
+    }
+}
+
+final class ConfigTestExampleEdgeAwareResolver implements EdgeAwareResolver
+{
+    public function resolve(Edges $edges, string $projectRoot, string $changedRelativePath): ?array
+    {
+        return null;
     }
 }

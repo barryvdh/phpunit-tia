@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace JMac\Testing\PhpUnit\Tia;
 
+use JMac\Testing\PhpUnit\Tia\Contracts\EdgeAwareResolver;
+use JMac\Testing\PhpUnit\Tia\Contracts\Edges;
 use JMac\Testing\PhpUnit\Tia\Contracts\Resolver;
 use PHPUnit\Framework\TestStatus\TestStatus;
 use PHPUnit\TextUI\Configuration\Registry;
@@ -19,7 +21,7 @@ use PHPUnit\TextUI\Configuration\Registry;
  * applyUnknownSourceDirs(). Framework packages extend this via Resolver
  * (Contracts/Resolver.php) instead.
  */
-final class Graph
+final class Graph implements Edges
 {
     /**
      * The branch whose baseline is read when the current branch has none of
@@ -57,7 +59,7 @@ final class Graph
     /** @var array<string, string|false> */
     private array $realpathCache = [];
 
-    /** @var list<Resolver> */
+    /** @var list<Resolver|EdgeAwareResolver> */
     private array $resolvers = [];
 
     private ?TestPaths $testPaths = null;
@@ -72,7 +74,7 @@ final class Graph
     }
 
     /**
-     * @param  list<Resolver>  $resolvers
+     * @param  list<Resolver|EdgeAwareResolver>  $resolvers
      */
     public function setResolvers(array $resolvers): void
     {
@@ -259,8 +261,8 @@ final class Graph
 
         $unknown = $this->applyPhpEdgeChanges($relPaths, $testPaths, $affectedSet, $reasons);
         $this->applyTestFileChanges($relPaths, $testPaths, $affectedSet, $reasons);
-        $this->applyUnknownSourceDirs($unknown, $affectedSet, $reasons);
-        $this->applyResolvers($unknown, $affectedSet, $reasons);
+        $handled = $this->applyResolvers($unknown, $affectedSet, $reasons);
+        $this->applyUnknownSourceDirs(array_values(array_diff($unknown, $handled)), $affectedSet, $reasons);
 
         return array_keys($affectedSet);
     }
@@ -399,24 +401,42 @@ final class Graph
 
     /**
      * Extension point (§4.3): every change core couldn't map to a known
-     * source edge is offered to each registered Resolver, regardless of
-     * whether the generic sibling-directory fallback already found
-     * something for it — a framework package's domain knowledge (e.g. a
-     * migration→table→test mapping) is more precise than a directory guess.
+     * source edge is offered to each registered Resolver — a framework
+     * package's domain knowledge (e.g. a migration→table→test mapping) is
+     * more precise than a directory guess.
+     *
+     * An EdgeAwareResolver claims a path by answering it with anything but
+     * null. The resolvers after it and the sibling-directory fallback then
+     * skip that path: once templates or migrations are linked, the directory
+     * guess for a new one would match every test linked to any of its
+     * siblings, which is close to the whole suite.
      *
      * @param  list<string>  $unknown
      * @param  array<string, true>  $affectedSet
      * @param  array<string, string>  $reasons
+     * @return list<string> the paths a resolver claimed
      */
-    private function applyResolvers(array $unknown, array &$affectedSet, array &$reasons): void
+    private function applyResolvers(array $unknown, array &$affectedSet, array &$reasons): array
     {
         if ($unknown === [] || $this->resolvers === []) {
-            return;
+            return [];
         }
+
+        $handled = [];
 
         foreach ($unknown as $rel) {
             foreach ($this->resolvers as $resolver) {
-                foreach ($resolver->resolve($this->projectRoot, $rel) as $testFile) {
+                $claims = $resolver instanceof EdgeAwareResolver;
+
+                $testFiles = $claims
+                    ? $resolver->resolve($this, $this->projectRoot, $rel)
+                    : $resolver->resolve($this->projectRoot, $rel);
+
+                if ($testFiles === null) {
+                    continue;
+                }
+
+                foreach ($testFiles as $testFile) {
                     $testRel = $this->relative($testFile);
 
                     if ($testRel !== null) {
@@ -424,8 +444,39 @@ final class Graph
                         $reasons[$testRel] ??= 'resolver '.$resolver::class." matched changed file '{$rel}'";
                     }
                 }
+
+                if ($claims) {
+                    $handled[] = $rel;
+
+                    break;
+                }
             }
         }
+
+        return $handled;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function testsLinkedTo(string $sourceFile): array
+    {
+        $rel = $this->relative($sourceFile);
+
+        if ($rel === null || ! isset($this->fileIds[$rel])) {
+            return [];
+        }
+
+        $id = $this->fileIds[$rel];
+        $tests = [];
+
+        foreach ($this->edges as $testFile => $ids) {
+            if (in_array($id, $ids, true)) {
+                $tests[] = (string) $testFile;
+            }
+        }
+
+        return $tests;
     }
 
     public function recordedAtSha(string $branch): ?string
