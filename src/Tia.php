@@ -28,7 +28,7 @@ final class Tia
 
     private static string $fallbackBranch = Graph::DEFAULT_FALLBACK_BRANCH;
 
-    /** @var list<Contracts\Resolver> */
+    /** @var list<Contracts\Resolver|Contracts\EdgeAwareResolver> */
     private static array $resolvers = [];
 
     private static bool $configured = false;
@@ -320,7 +320,7 @@ final class Tia
     }
 
     /**
-     * @param  list<Contracts\Resolver>  $resolvers
+     * @param  list<Contracts\Resolver|Contracts\EdgeAwareResolver>  $resolvers
      */
     private static function attemptBoot(
         string $projectRoot,

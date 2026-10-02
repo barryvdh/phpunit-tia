@@ -25,55 +25,38 @@ final class LaravelResolver implements EdgeAwareResolver
 {
     private const string MIGRATIONS = 'database/migrations';
 
-    private ?Edges $edges = null;
-
     private ?ViewReferences $views = null;
 
-    /** @var array<string, true> */
-    private array $handled = [];
-
-    public function useEdges(Edges $edges): void
-    {
-        $this->edges = $edges;
-    }
-
     /**
-     * @return list<string>
+     * @return list<string>|null
      */
-    public function resolve(string $projectRoot, string $changedRelativePath): array
+    public function resolve(Edges $edges, string $projectRoot, string $changedRelativePath): ?array
     {
-        if ($this->edges === null || ! is_file($projectRoot.'/'.$changedRelativePath)) {
-            return [];
+        if (! is_file($projectRoot.'/'.$changedRelativePath)) {
+            return null;
         }
 
         if (dirname($changedRelativePath) === self::MIGRATIONS && str_ends_with($changedRelativePath, '.php')) {
-            return $this->resolveMigration($this->edges, $projectRoot, $changedRelativePath);
+            return $this->resolveMigration($edges, $projectRoot, $changedRelativePath);
         }
 
         if (ViewReferences::isView($changedRelativePath)) {
-            return $this->resolveView($this->edges, $projectRoot, $changedRelativePath);
+            return $this->resolveView($edges, $projectRoot, $changedRelativePath);
         }
 
-        return [];
-    }
-
-    public function handles(string $changedRelativePath): bool
-    {
-        return isset($this->handled[$changedRelativePath]);
+        return null;
     }
 
     /**
-     * @return list<string>
+     * @return list<string>|null
      */
-    private function resolveMigration(Edges $edges, string $projectRoot, string $migration): array
+    private function resolveMigration(Edges $edges, string $projectRoot, string $migration): ?array
     {
         $tables = Tables::fromMigrationSource((string) file_get_contents($projectRoot.'/'.$migration));
 
         if ($tables === []) {
-            return [];
+            return null;
         }
-
-        $this->handled[$migration] = true;
 
         $earlier = (new Migrations([$projectRoot.'/'.self::MIGRATIONS]))->touchingAny($tables);
 
@@ -81,19 +64,15 @@ final class LaravelResolver implements EdgeAwareResolver
     }
 
     /**
-     * @return list<string>
+     * @return list<string>|null
      */
-    private function resolveView(Edges $edges, string $projectRoot, string $view): array
+    private function resolveView(Edges $edges, string $projectRoot, string $view): ?array
     {
         $this->views ??= new ViewReferences($projectRoot);
 
         $tests = $this->testsLinkedToAny($edges, $this->views->using($view));
 
-        if ($tests !== []) {
-            $this->handled[$view] = true;
-        }
-
-        return $tests;
+        return $tests === [] ? null : $tests;
     }
 
     /**

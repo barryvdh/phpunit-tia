@@ -143,12 +143,16 @@ Tia::link($view->getPath());
 
 `Tia::link()` does nothing when the run doesn't record, or outside a running test.
 
-A changed file without an edge (a new partial, a new migration) goes to the registered resolvers. A resolver that implements `Contracts\EdgeAwareResolver` gets the graph before it resolves anything, and can ask which tests are linked to a file it already knows: the template that includes the new partial, or an earlier migration of the same table.
+A changed file without an edge (a new partial, a new migration) goes to the registered resolvers. A resolver that implements `Contracts\EdgeAwareResolver` is handed the graph, and can ask which tests are linked to a file it already knows: the template that includes the new partial, or an earlier migration of the same table. Its answer is final: return `null` to leave the path to the resolvers after it and the sibling-directory guess.
 
 ```php
-public function resolve(string $projectRoot, string $changedRelativePath): array
+public function resolve(Edges $edges, string $projectRoot, string $changedRelativePath): ?array
 {
-    return $this->edges->testsLinkedTo('resources/views/invoice.blade.php');
+    if ($changedRelativePath !== 'resources/views/partials/total.blade.php') {
+        return null;
+    }
+
+    return $edges->testsLinkedTo('resources/views/invoice.blade.php');
 }
 ```
 

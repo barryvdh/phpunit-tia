@@ -957,25 +957,13 @@ final class GraphTest extends TestCase
 
         $resolver = new class implements EdgeAwareResolver
         {
-            private ?Edges $edges = null;
-
-            public function useEdges(Edges $edges): void
-            {
-                $this->edges = $edges;
-            }
-
-            public function resolve(string $projectRoot, string $changedRelativePath): array
+            public function resolve(Edges $edges, string $projectRoot, string $changedRelativePath): ?array
             {
                 if ($changedRelativePath !== 'resources/views/partials/total.blade.php') {
-                    return [];
+                    return null;
                 }
 
-                return $this->edges?->testsLinkedTo('resources/views/invoice.blade.php') ?? [];
-            }
-
-            public function handles(string $changedRelativePath): bool
-            {
-                return false;
+                return $edges->testsLinkedTo('resources/views/invoice.blade.php');
             }
         };
 
@@ -988,7 +976,7 @@ final class GraphTest extends TestCase
     }
 
     #[Test]
-    public function a_path_an_edge_aware_resolver_handles_skips_later_resolvers_and_the_sibling_guess(): void
+    public function a_path_an_edge_aware_resolver_answers_skips_later_resolvers_and_the_sibling_guess(): void
     {
         // Every test is linked to some migration, so the sibling-directory
         // guess for a new one would select them all. The resolver knows the
@@ -1001,21 +989,9 @@ final class GraphTest extends TestCase
 
         $migrations = new class implements EdgeAwareResolver
         {
-            private ?Edges $edges = null;
-
-            public function useEdges(Edges $edges): void
+            public function resolve(Edges $edges, string $projectRoot, string $changedRelativePath): ?array
             {
-                $this->edges = $edges;
-            }
-
-            public function resolve(string $projectRoot, string $changedRelativePath): array
-            {
-                return $this->edges?->testsLinkedTo('database/migrations/2024_01_01_create_invoices_table.php') ?? [];
-            }
-
-            public function handles(string $changedRelativePath): bool
-            {
-                return str_starts_with($changedRelativePath, 'database/migrations/');
+                return $edges->testsLinkedTo('database/migrations/2024_01_01_create_invoices_table.php');
             }
         };
 
@@ -1033,5 +1009,39 @@ final class GraphTest extends TestCase
         $graph->setResolvers([$migrations, $everything]);
 
         $this->assertSame(['tests/InvoiceTest.php'], $graph->affected(['database/migrations/2024_02_01_add_total_to_invoices.php']));
+    }
+
+    #[Test]
+    public function a_path_an_edge_aware_resolver_has_no_opinion_on_is_left_to_later_resolvers_and_the_sibling_guess(): void
+    {
+        $this->repo->write('src/Billing/Invoice.php', "<?php\n");
+        $this->repo->write('src/Billing/Refund.php', "<?php\n");
+        $this->repo->write('tests/InvoiceTest.php', "<?php\n");
+        $this->repo->write('tests/UserTest.php', "<?php\n");
+
+        $noOpinion = new class implements EdgeAwareResolver
+        {
+            public function resolve(Edges $edges, string $projectRoot, string $changedRelativePath): ?array
+            {
+                return null;
+            }
+        };
+
+        $users = new class implements Resolver
+        {
+            public function resolve(string $projectRoot, string $changedRelativePath): array
+            {
+                return ['tests/UserTest.php'];
+            }
+        };
+
+        $graph = $this->graph();
+        $graph->link('tests/InvoiceTest.php', 'src/Billing/Invoice.php');
+        $graph->setResolvers([$noOpinion, $users]);
+
+        $affected = $graph->affected(['src/Billing/Refund.php']);
+        sort($affected);
+
+        $this->assertSame(['tests/InvoiceTest.php', 'tests/UserTest.php'], $affected);
     }
 }

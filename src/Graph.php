@@ -59,7 +59,7 @@ final class Graph implements Edges
     /** @var array<string, string|false> */
     private array $realpathCache = [];
 
-    /** @var list<Resolver> */
+    /** @var list<Resolver|EdgeAwareResolver> */
     private array $resolvers = [];
 
     private ?TestPaths $testPaths = null;
@@ -74,7 +74,7 @@ final class Graph implements Edges
     }
 
     /**
-     * @param  list<Resolver>  $resolvers
+     * @param  list<Resolver|EdgeAwareResolver>  $resolvers
      */
     public function setResolvers(array $resolvers): void
     {
@@ -405,11 +405,11 @@ final class Graph implements Edges
      * package's domain knowledge (e.g. a migration→table→test mapping) is
      * more precise than a directory guess.
      *
-     * An EdgeAwareResolver can claim a path by reporting that its answer is
-     * complete. The resolvers after it and the sibling-directory fallback
-     * then skip that path: once templates or migrations are linked, the
-     * directory guess for a new one would match every test linked to any of
-     * its siblings, which is close to the whole suite.
+     * An EdgeAwareResolver claims a path by answering it with anything but
+     * null. The resolvers after it and the sibling-directory fallback then
+     * skip that path: once templates or migrations are linked, the directory
+     * guess for a new one would match every test linked to any of its
+     * siblings, which is close to the whole suite.
      *
      * @param  list<string>  $unknown
      * @param  array<string, true>  $affectedSet
@@ -422,17 +422,21 @@ final class Graph implements Edges
             return [];
         }
 
-        foreach ($this->resolvers as $resolver) {
-            if ($resolver instanceof EdgeAwareResolver) {
-                $resolver->useEdges($this);
-            }
-        }
-
         $handled = [];
 
         foreach ($unknown as $rel) {
             foreach ($this->resolvers as $resolver) {
-                foreach ($resolver->resolve($this->projectRoot, $rel) as $testFile) {
+                $claims = $resolver instanceof EdgeAwareResolver;
+
+                $testFiles = $claims
+                    ? $resolver->resolve($this, $this->projectRoot, $rel)
+                    : $resolver->resolve($this->projectRoot, $rel);
+
+                if ($testFiles === null) {
+                    continue;
+                }
+
+                foreach ($testFiles as $testFile) {
                     $testRel = $this->relative($testFile);
 
                     if ($testRel !== null) {
@@ -441,7 +445,7 @@ final class Graph implements Edges
                     }
                 }
 
-                if ($resolver instanceof EdgeAwareResolver && $resolver->handles($rel)) {
+                if ($claims) {
                     $handled[] = $rel;
 
                     break;
