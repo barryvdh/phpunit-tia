@@ -46,7 +46,7 @@ final class Tia
     /**
      * @param  array<string, true>  $affectedTestFiles
      * @param  array<string, string>  $affectedReasons
-     * @param  array<int, string>  $changedFiles
+     * @param  array<string, int>  $affectedPerChangedFile
      */
     private function __construct(
         private readonly bool $active,
@@ -55,7 +55,8 @@ final class Tia
         array $affectedTestFiles,
         array $affectedReasons = [],
         private readonly ?string $inactiveReason = null,
-        private readonly array $changedFiles = [],
+        private readonly array $affectedPerChangedFile = [],
+        private readonly int $rerunWithoutCachedPass = 0,
     ) {
         $this->affectedTestFiles = $affectedTestFiles;
         $this->affectedReasons = $affectedReasons;
@@ -235,37 +236,32 @@ final class Tia
 
     /**
      * One line for the whole run, written by Extension::bootstrap(): why TIA
-     * is inactive, or how many test files the changes affect and which
-     * changed files affect the most — so a run that skips nothing explains
-     * itself without PHPUNIT_TIA_DEBUG's line per test. Counted per changed
-     * file rather than from the per-test reasons, which keep only the first
-     * file that matched a test and would hide the others.
+     * is inactive, or how many test files the changes affect, plus those that
+     * run anyway because their last result was not a pass. Under
+     * PHPUNIT_TIA_DEBUG=1 it also names the changed files that affect the
+     * most, counted per changed file during the one affected() pass in
+     * attemptBoot().
      */
     public function summary(): string
     {
         if (! $this->active || $this->graph === null) {
-            return 'inactive — '.($this->inactiveReason ?? 'TIA inactive this run');
+            return 'inactive: '.($this->inactiveReason ?? 'TIA inactive this run');
         }
 
         $affected = count($this->affectedTestFiles);
         $total = count(array_unique([...$this->graph->allTestFiles(), ...array_keys($this->affectedTestFiles)]));
         $summary = "{$affected} of {$total} test files affected";
 
-        if ($affected === 0) {
+        if ($this->rerunWithoutCachedPass > 0) {
+            $summary .= " (+{$this->rerunWithoutCachedPass} without a cached pass)";
+        }
+
+        if ($this->affectedPerChangedFile === []) {
             return $summary;
         }
 
-        $perFile = [];
-
-        foreach ($this->changedFiles as $file) {
-            $count = count($this->graph->affected([$file]));
-
-            if ($count > 0) {
-                $perFile[$file] = $count;
-            }
-        }
-
         // Most affected first; ties by path, as arsort() is stable.
+        $perFile = $this->affectedPerChangedFile;
         ksort($perFile);
         arsort($perFile);
 
@@ -279,7 +275,7 @@ final class Tia
             $listed[] = 'and '.(count($perFile) - 5).' more';
         }
 
-        return $summary.' by '.count($perFile).(count($perFile) === 1 ? ' changed file: ' : ' changed files: ').implode(', ', $listed);
+        return $summary.'. By changed file: '.implode(', ', $listed);
     }
 
     /**
@@ -429,9 +425,14 @@ final class Tia
         $changed = $changedFiles->filterUnchangedSinceLastRun($changed, $graph->lastRunTree($branch));
 
         $reasons = [];
-        $affected = $graph->affected($changed, $reasons);
 
-        return new self(true, $graph, $branch, array_fill_keys($affected, true), $reasons, changedFiles: $changed);
+        // Counted per changed file only for PHPUNIT_TIA_DEBUG's summary:
+        // without it, affected() does no more than it needs to.
+        $affectedPerChangedFile = self::isDebug() ? [] : null;
+        $affected = $graph->affected($changed, $reasons, $affectedPerChangedFile);
+        $rerun = count(array_diff($graph->testFilesWithoutCachedPass($branch), $affected));
+
+        return new self(true, $graph, $branch, array_fill_keys($affected, true), $reasons, null, $affectedPerChangedFile ?? [], $rerun);
     }
 
     private static function inactive(?string $reason = null): self

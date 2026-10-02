@@ -26,7 +26,7 @@ final class Extension implements ExtensionContract
     public function bootstrap(Configuration $configuration, Facade $facade, ParameterCollection $parameters): void
     {
         if (! Tia::isEnabled()) {
-            fwrite(STDERR, "phpunit-tia: disabled via PHPUNIT_TIA=0.\n");
+            fwrite(STDERR, "phpunit-tia: inactive: disabled via PHPUNIT_TIA=0.\n");
 
             return;
         }
@@ -43,7 +43,11 @@ final class Extension implements ExtensionContract
         // driver after the graph was written elsewhere (e.g. CI vs. local).
         Tia::configure($projectRoot, $storageMode, $resolvers, $fallbackBranch);
 
-        fwrite(STDERR, 'phpunit-tia: '.Tia::instance()->summary().".\n");
+        // Each ParaTest worker bootstraps its own PHPUnit, so the summary
+        // would repeat once per worker.
+        if (! $this->runningUnderParaTest()) {
+            fwrite(STDERR, 'phpunit-tia: '.Tia::instance()->summary().".\n");
+        }
 
         if (! $this->coverageDriverAvailable()) {
             fwrite(STDERR, "phpunit-tia: no coverage driver (pcov/xdebug) available — recording disabled for this run.\n");

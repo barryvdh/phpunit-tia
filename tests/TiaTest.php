@@ -13,6 +13,7 @@ use JMac\Testing\PhpUnit\Tia\ResultCollector;
 use JMac\Testing\PhpUnit\Tia\Storage;
 use JMac\Testing\PhpUnit\Tia\Tests\Support\TempGitRepository;
 use JMac\Testing\PhpUnit\Tia\Tia;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use PHPUnit\Framework\TestStatus\TestStatus;
@@ -492,9 +493,35 @@ final class TiaTest extends TestCase
     public function summary_reports_why_tia_is_inactive(): void
     {
         $this->assertSame(
-            'inactive — TIA is not configured for this run',
+            'inactive: TIA is not configured for this run',
             Tia::instance()->summary(),
         );
+    }
+
+    #[Test]
+    public function summary_lists_changed_files_only_in_debug_mode(): void
+    {
+        $this->recordPassingTest();
+
+        $this->repo->write('src/Foo.php', "<?php\n\nclass Foo\n{\n    public int \$x = 1;\n}\n");
+
+        Tia::configure($this->repo->path(), 'local');
+
+        $this->assertSame('1 of 1 test files affected', Tia::instance()->summary());
+
+        putenv('PHPUNIT_TIA_DEBUG=1');
+
+        try {
+            // Counted while TIA boots, so it has to boot again in debug mode.
+            Tia::configure($this->repo->path(), 'local');
+
+            $this->assertSame(
+                '1 of 1 test files affected. By changed file: src/Foo.php (1)',
+                Tia::instance()->summary(),
+            );
+        } finally {
+            putenv('PHPUNIT_TIA_DEBUG');
+        }
     }
 
     #[Test]
@@ -512,12 +539,18 @@ final class TiaTest extends TestCase
         $this->repo->write('src/Foo.php', "<?php\n\nclass Foo\n{\n    public int \$x = 1;\n}\n");
         $this->repo->write('src/Bar.php', "<?php\n\nclass Bar\n{\n}\n");
 
-        Tia::configure($this->repo->path(), 'local');
+        putenv('PHPUNIT_TIA_DEBUG=1');
 
-        $this->assertSame(
-            '1 of 1 test files affected by 2 changed files: src/Bar.php (1), src/Foo.php (1)',
-            Tia::instance()->summary(),
-        );
+        try {
+            Tia::configure($this->repo->path(), 'local');
+
+            $this->assertSame(
+                '1 of 1 test files affected. By changed file: src/Bar.php (1), src/Foo.php (1)',
+                Tia::instance()->summary(),
+            );
+        } finally {
+            putenv('PHPUNIT_TIA_DEBUG');
+        }
     }
 
     #[Test]
@@ -535,12 +568,18 @@ final class TiaTest extends TestCase
 
         $state->write(Storage::GRAPH_KEY, (string) $graph->encode());
 
-        Tia::configure($this->repo->path(), 'local');
+        putenv('PHPUNIT_TIA_DEBUG=1');
 
-        $this->assertSame(
-            '1 of 1 test files affected by 6 changed files: src/A.php (1), src/B.php (1), src/C.php (1), src/D.php (1), src/E.php (1), and 1 more',
-            Tia::instance()->summary(),
-        );
+        try {
+            Tia::configure($this->repo->path(), 'local');
+
+            $this->assertSame(
+                '1 of 1 test files affected. By changed file: src/A.php (1), src/B.php (1), src/C.php (1), src/D.php (1), src/E.php (1), and 1 more',
+                Tia::instance()->summary(),
+            );
+        } finally {
+            putenv('PHPUNIT_TIA_DEBUG');
+        }
     }
 
     #[Test]
@@ -551,6 +590,34 @@ final class TiaTest extends TestCase
         Tia::configure($this->repo->path(), 'local');
 
         $this->assertSame('0 of 1 test files affected', Tia::instance()->summary());
+    }
+
+    #[Test]
+    #[DataProvider('statusesWithoutACachedPass')]
+    public function summary_counts_tests_that_run_without_a_cached_pass(TestStatus $status): void
+    {
+        [$class, $method] = $this->recordTest($status);
+
+        Tia::configure($this->repo->path(), 'local');
+
+        // Not replayed, whatever the failOn*/displayDetailsOn* policy, so it runs.
+        $this->assertNull(Tia::instance()->cachedStatusIfUnaffected($class, $method));
+        $this->assertSame(
+            '0 of 1 test files affected (+1 without a cached pass)',
+            Tia::instance()->summary(),
+        );
+    }
+
+    /**
+     * @return array<string, array{0: TestStatus}>
+     */
+    public static function statusesWithoutACachedPass(): array
+    {
+        return [
+            'incomplete' => [TestStatus::incomplete('later')],
+            'skipped' => [TestStatus::skipped('')],
+            'failure' => [TestStatus::failure('boom')],
+        ];
     }
 
     /**
